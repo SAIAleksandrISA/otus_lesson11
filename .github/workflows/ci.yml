@@ -10,6 +10,7 @@ jobs:
 
     - name: Install dependencies
       run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome.list
         sudo apt-get update -y
         sudo apt-get install -y libboost-all-dev cmake g++
 
@@ -20,7 +21,7 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Upload build artifact
-      uses: actions/upload-artifact@v4 # <-- намнбкемн дн v4
+      uses: actions/upload-artifact@v4
       with:
         name: join_server_executable
         path: build/join_server
