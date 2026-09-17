@@ -6,6 +6,7 @@
 #include <map>
 #include <algorithm>
 #include <utility>
+#include <mutex>
 
 class Database
 {
@@ -22,7 +23,7 @@ public:
         {
             return m_tableB.insert(id, std::move(name));
         }
-        return false; // Неизвестная таблица
+        return false;
     }
 
     void truncate(const std::string& tableName)
@@ -39,6 +40,8 @@ public:
 
     std::vector<std::string> intersect() const
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
         auto dataA = m_tableA.getAllData();
         auto dataB = m_tableB.getAllData();
 
@@ -68,40 +71,50 @@ public:
         return result;
     }
 
-    std::vector<std::string> symmetric_difference() const
+    std::vector<std::string> symmetricDifference() const
     {
-        auto dataA = m_tableA.getAllData();
-        auto dataB = m_tableB.getAllData();
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        const auto& dataA = m_tableA.getAllData();
+        const auto& dataB = m_tableB.getAllData();
 
         std::vector<std::string> result;
         result.reserve(dataA.size() + dataB.size());
 
         auto itA = dataA.begin();
         auto itB = dataB.begin();
+        auto endA = dataA.end();
+        auto endB = dataB.end();
 
-        while (itA != dataA.end() || itB != dataB.end())
+        while (itA != endA || itB != endB)
         {
-            int idA = (itA != dataA.end()) ? itA->first : -1;
-            int idB = (itB != dataB.end()) ? itB->first : -1;
-
-            if (idA != -1 && (idB == -1 || idA < idB))
+            if (itA == endA)
             {
-                result.push_back(std::to_string(idA) + "," + itA->second + ",");
-                ++itA;
-            }
-            else if (idB != -1 && (idA == -1 || idB < idA))
-            {
-                result.push_back(std::to_string(idB) + ",," + itB->second);
+                result.push_back(std::to_string(itB->first) + ",," + itB->second);
                 ++itB;
             }
-            else if (idA != -1 && idB != -1 && idA == idB)
+            else if (itB == endB)
             {
+                result.push_back(std::to_string(itA->first) + "," + itA->second + ",");
                 ++itA;
-                ++itB;
             }
             else
             {
-                if (idA == -1 && idB == -1) break;
+                if (itA->first < itB->first) 
+                {
+                    result.push_back(std::to_string(itA->first) + "," + itA->second + ",");
+                    ++itA;
+                }
+                else if (itB->first < itA->first) 
+                {
+                    result.push_back(std::to_string(itB->first) + ",," + itB->second);
+                    ++itB;
+                }
+                else 
+                {
+                    ++itA;
+                    ++itB;
+                }
             }
         }
         return result;
@@ -110,4 +123,5 @@ public:
 private:
     Table m_tableA;
     Table m_tableB;
+    mutable std::mutex m_mutex;
 };

@@ -32,20 +32,14 @@ private:
     {
         auto self(shared_from_this());
 
-        boost::asio::async_read_until(m_socket, m_buffer, ".",
+        boost::asio::async_read_until(m_socket, m_buffer, '\n',
             [this, self](boost::system::error_code ec, std::size_t length)
             {
                 if (!ec)
                 {
                     std::istream is(&m_buffer);
                     std::string raw_command;
-                    std::getline(is, raw_command, '.');
-
-                    if (m_buffer.size() > 0) {
-                        std::string dummy;
-                        std::getline(is, dummy);
-                    }
-
+                    std::getline(is, raw_command);
                     std::string trimmed_command = trim(raw_command);
                     processCommand(trimmed_command);
                 }
@@ -62,79 +56,100 @@ private:
 
     void processCommand(const std::string& command)
     {
-        std::stringstream ss(command);
-        std::string segment;
-        std::vector<std::string> tokens;
-
-        while (std::getline(ss, segment, ' '))
-        {
-            if (!segment.empty())
-            {
-                tokens.push_back(segment);
-            }
-        }
-
-        std::string response_data;
+        size_t first_space = command.find(' ');
+        std::string cmd_token;
+        std::string args_str;
         std::string final_response;
 
-        if (tokens.empty())
+        if (first_space == std::string::npos)
         {
-            final_response = "ERR empty command\n";
+            cmd_token = command;
+            args_str = "";
         }
-        else if (tokens[0] == "INSERT")
+        else
         {
-            if (tokens.size() == 4)
+            cmd_token = command.substr(0, first_space);
+            args_str = command.substr(first_space + 1);
+        }
+
+        if (cmd_token == "INSERT")
+        {
+            size_t second_space = args_str.find(' ');
+            if (second_space != std::string::npos)
             {
-                try
+                std::string table_name = args_str.substr(0, second_space);
+                std::string rest_of_args = args_str.substr(second_space + 1);
+
+                size_t third_space = rest_of_args.find(' ');
+                if (third_space != std::string::npos)
                 {
-                    int id = std::stoi(tokens[2]);
-                    if (m_db->insert(tokens[1], id, tokens[3]))
+                    std::string id_str = rest_of_args.substr(0, third_space);
+                    std::string name_val = rest_of_args.substr(third_space + 1);
+
+                    try
                     {
-                        final_response = "OK\n";
+                        int id = std::stoi(id_str);
+                        if (m_db->insert(table_name, id, name_val))
+                        {
+                            final_response = "OK\n";
+                        }
+                        else
+                        {
+                            final_response = "ERR duplicate " + id_str + "\n";
+                        }
                     }
-                    else
-                    {
-                        final_response = "ERR duplicate " + tokens[2] + "\n";
-                    }
+                    catch (...) { final_response = "ERR invalid arguments\n"; }
                 }
-                catch (...) { final_response = "ERR invalid arguments\n"; }
+                else { final_response = "ERR invalid command format\n"; }
             }
             else { final_response = "ERR invalid command format\n"; }
         }
-        else if (tokens[0] == "TRUNCATE")
+        else if (cmd_token == "TRUNCATE")
         {
-            if (tokens.size() == 2)
+            if (args_str.find(' ') == std::string::npos && !args_str.empty())
             {
-                m_db->truncate(tokens[1]);
+                m_db->truncate(args_str);
                 final_response = "OK\n";
             }
             else { final_response = "ERR invalid command format\n"; }
         }
-        else if (tokens[0] == "INTERSECTION")
+        else if (cmd_token == "INTERSECTION")
         {
-            if (tokens.size() == 1)
+            if (args_str.empty())
             {
                 auto result = m_db->intersect();
+                std::string response_data;
                 for (const auto& line : result)
                 {
                     response_data += line + "\n";
                 }
                 final_response = response_data + "OK\n";
             }
-            else { final_response = "ERR invalid command format\n"; }
-        }
-        else if (tokens[0] == "SYMMETRIC_DIFFERENCE")
-        {
-            if (tokens.size() == 1)
+            else
             {
-                auto result = m_db->symmetric_difference();
+                final_response = "ERR invalid command format\n";
+            }
+        }
+        else if (cmd_token == "SYMMETRIC_DIFFERENCE")
+        {
+            if (args_str.empty())
+            {
+                auto result = m_db->symmetricDifference();
+                std::string response_data;
                 for (const auto& line : result)
                 {
                     response_data += line + "\n";
                 }
                 final_response = response_data + "OK\n";
             }
-            else { final_response = "ERR invalid command format\n"; }
+            else
+            {
+                final_response = "ERR invalid command format\n";
+            }
+        }
+        else if (cmd_token.empty())
+        {
+            final_response = "ERR empty command\n";
         }
         else
         {
